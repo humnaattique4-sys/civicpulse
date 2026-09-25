@@ -15,7 +15,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://civicpulse:civicpulse@postgres:5432/civicpulse
+      DATABASE_URL: postgresql+psycopg2://civicpulse:civicpulse@postgres:5432/civicpulse
     depends_on:
       - postgres
 

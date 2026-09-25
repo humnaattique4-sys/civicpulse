@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://civicpulse:civicpulse@localhost:5432/civicpulse"
+    "postgresql+psycopg2://civicpulse:civicpulse@localhost:5432/civicpulse"
 )
 
 engine = create_engine(DATABASE_URL)
