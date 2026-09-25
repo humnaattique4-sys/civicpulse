@@ -7,8 +7,8 @@ CATEGORY_KEYWORDS = {
     Category.water: ["water", "pipe", "burst main", "sewage", "leak"],
     Category.electricity: ["electric", "power", "wire", "transformer", "outage"],
     Category.sanitation: ["garbage", "trash", "sewage", "waste", "sanitation"],
-    Category.roads: ["road", "pothole", "street", "traffic", "sign"],
     Category.streetlights: ["streetlight", "street light", "lamp post"],
+    Category.roads: ["road", "pothole", "street", "traffic", "sign"],
 }
 
 

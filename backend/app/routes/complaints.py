@@ -8,6 +8,7 @@ from app.models import Complaint, Status
 from app.schemas import ComplaintCreate, ComplaintOut, StatusUpdate
 from app.services.triage_service import run_triage
 from app.services.state_machine import validate_transition
+from app.cache import redis_client
 
 router = APIRouter(prefix="/api/complaints", tags=["complaints"])
 
@@ -29,6 +30,7 @@ def create_complaint(payload: ComplaintCreate, db: Session = Depends(get_db)):
     db.add(complaint)
     db.commit()
     db.refresh(complaint)
+    redis_client.delete("stats:aggregate")
     return complaint
 
 
