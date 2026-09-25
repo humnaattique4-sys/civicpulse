@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy import text
 from app.database import engine, Base
@@ -9,9 +10,14 @@ import app.models
 
 setup_logging()
 
-Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="CivicPulse")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    yield
+
+
+app = FastAPI(title="CivicPulse", lifespan=lifespan)
 
 app.add_middleware(RequestIDMiddleware)
 
