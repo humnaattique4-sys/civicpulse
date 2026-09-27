@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
-from app.database import engine, Base
+from app.database import engine
 from app.cache import redis_client
 from app.routes import complaints, stats
 from app.logging_config import setup_logging
@@ -14,7 +14,6 @@ setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
     yield
 
 
