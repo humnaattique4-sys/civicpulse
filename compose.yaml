@@ -63,10 +63,6 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    # dev only: hot reload from mounted source (not in compose.prod.yaml)
-    volumes:
-      - ./backend/app:/app/app
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     networks: [edge, internal]
     deploy:
       resources:
