@@ -24,4 +24,23 @@ jobs:
       - name: Check imports work
         working-directory: backend
         run: python -c "from app.main import app; print('App imports successfully')"
-        
+
+  test-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run component tests
+        working-directory: frontend
+        run: npm test
