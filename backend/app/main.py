@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from app.database import engine
 from app.cache import redis_client
-from app.routes import complaints, stats
+from app.routes import complaints, stats, meta
 from app.logging_config import setup_logging
 from app.middleware import RequestIDMiddleware
 import app.models
@@ -32,7 +32,7 @@ app.add_middleware(RequestIDMiddleware)
 
 app.include_router(complaints.router)
 app.include_router(stats.router)
-
+app.include_router(meta.router)
 
 @app.exception_handler(RequestValidationError)
 async def validation_handler(request: Request, exc: RequestValidationError):

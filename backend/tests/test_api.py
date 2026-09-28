@@ -119,3 +119,13 @@ def test_validation_error_is_400_with_field_errors(client):
     response = client.post("/api/complaints", json={"text": "short", "location": "x"})
     assert response.status_code == 400
     assert "text" in response.json()["errors"]
+
+
+def test_meta_providers_reports_active_provider_and_outcomes(client):
+    client.post("/api/complaints", json=VALID)
+    response = client.get("/api/meta/providers")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["active_provider"] == "rules"
+    assert len(body["recent_outcomes"]) >= 1
+    assert set(body["recent_outcomes"][0]) == {"provider", "latency_ms", "fallback"}
