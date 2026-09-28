@@ -1,32 +1,31 @@
+import logging
 import time
-from app.models import Category, Priority
 
-URGENT_WORDS = ["flooding", "burst", "fire", "gas leak", "collapse", "electrocut", "sparking"]
+from app.providers.triage.factory import get_provider
+from app.providers.triage.rules import RuleBasedTriage
 
-CATEGORY_KEYWORDS = {
-    Category.water: ["water", "pipe", "burst main", "sewage", "leak"],
-    Category.electricity: ["electric", "power", "wire", "transformer", "outage"],
-    Category.sanitation: ["garbage", "trash", "sewage", "waste", "sanitation"],
-    Category.streetlights: ["streetlight", "street light", "lamp post"],
-    Category.roads: ["road", "pothole", "street", "traffic", "sign"],
-}
+logger = logging.getLogger("civicpulse")
 
 
-def run_triage(text: str, location: str):
+def run_triage(text: str, location: str, provider=None):
+    """Triage a complaint. Never raises because a provider failed.
+
+    If the chosen provider raises or returns something that fails schema
+    validation, we log one WARNING and fall back to the rule-based provider,
+    recording triaged_by = "rules:fallback".
+    """
+    provider = provider or get_provider()
     start = time.perf_counter()
-    lowered = text.lower()
 
-    category = Category.other
-    for cat, keywords in CATEGORY_KEYWORDS.items():
-        if any(kw in lowered for kw in keywords):
-            category = cat
-            break
-
-    priority = Priority.high if any(w in lowered for w in URGENT_WORDS) else Priority.normal
-
-    summary = text.strip().replace("\n", " ")[:137]
-    if len(text) > 137:
-        summary += "..."
+    try:
+        result = provider.triage(text, location)
+        triaged_by = provider.name
+    except Exception as exc:
+        logger.warning(
+            f"triage fallback: provider={provider.name} error={type(exc).__name__}"
+        )
+        result = RuleBasedTriage().triage(text, location)
+        triaged_by = "rules:fallback"
 
     latency_ms = int((time.perf_counter() - start) * 1000)
-    return category, priority, summary, "rules", latency_ms
+    return result.category, result.priority, result.summary, triaged_by, latency_ms
