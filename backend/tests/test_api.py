@@ -63,3 +63,12 @@ def test_list_complaints_filters_by_category(client):
     assert response.status_code == 200
     assert len(response.json()) == 1
     assert response.json()[0]["category"] == "sanitation"
+
+
+def test_rate_limit_returns_429_with_retry_after(client, monkeypatch):
+    monkeypatch.setenv("RATE_LIMIT_PER_MIN", "2")
+    client.post("/api/complaints", json=VALID)
+    client.post("/api/complaints", json=VALID)
+    third = client.post("/api/complaints", json=VALID)
+    assert third.status_code == 429
+    assert "retry-after" in third.headers

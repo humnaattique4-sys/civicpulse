@@ -8,6 +8,7 @@ from app.main import app
 from app.database import Base, get_db
 import app.models as _models  # noqa: F401  (registers tables on Base)
 from app.routes import complaints, stats
+from app.services import rate_limiter
 
 
 class FakeRedis:
@@ -27,6 +28,13 @@ class FakeRedis:
 
     def ping(self):
         return True
+
+    def incr(self, key):
+        self.store[key] = int(self.store.get(key, 0)) + 1
+        return self.store[key]
+
+    def expire(self, key, ttl):
+        pass
 
 
 @pytest.fixture
@@ -51,6 +59,7 @@ def client(monkeypatch):
     fake = FakeRedis()
     monkeypatch.setattr(complaints, "redis_client", fake)
     monkeypatch.setattr(stats, "redis_client", fake)
+    monkeypatch.setattr(rate_limiter, "redis_client", fake)
     monkeypatch.setenv("TRIAGE_PROVIDER", "rules")
 
     with TestClient(app) as test_client:

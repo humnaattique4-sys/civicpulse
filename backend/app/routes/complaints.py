@@ -8,12 +8,18 @@ from app.models import Complaint, Status
 from app.schemas import ComplaintCreate, ComplaintOut, StatusUpdate
 from app.services.triage_service import run_triage
 from app.services.state_machine import validate_transition
+from app.services.rate_limiter import rate_limit
 from app.cache import redis_client
 
 router = APIRouter(prefix="/api/complaints", tags=["complaints"])
 
 
-@router.post("", response_model=ComplaintOut, status_code=201)
+@router.post(
+    "",
+    response_model=ComplaintOut,
+    status_code=201,
+    dependencies=[Depends(rate_limit)],
+)
 def create_complaint(payload: ComplaintCreate, db: Session = Depends(get_db)):
     category, priority, summary, provider, latency_ms = run_triage(payload.text, payload.location)
 
