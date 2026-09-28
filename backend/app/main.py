@@ -2,13 +2,15 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import text
 from app.database import engine
 from app.cache import redis_client
 from app.routes import complaints, stats, meta
 from app.logging_config import setup_logging
 from app.middleware import RequestIDMiddleware
+from app.metrics import MetricsMiddleware
 import app.models
 
 setup_logging()
@@ -29,10 +31,12 @@ app.add_middleware(
 )
 
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(MetricsMiddleware)
 
 app.include_router(complaints.router)
 app.include_router(stats.router)
 app.include_router(meta.router)
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_handler(request: Request, exc: RequestValidationError):
@@ -72,3 +76,8 @@ def ready():
             content={"status": "not ready", "failed": failed},
         )
     return {"status": "ready"}
+
+
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)

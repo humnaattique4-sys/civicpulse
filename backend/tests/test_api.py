@@ -129,3 +129,10 @@ def test_meta_providers_reports_active_provider_and_outcomes(client):
     assert body["active_provider"] == "rules"
     assert len(body["recent_outcomes"]) >= 1
     assert set(body["recent_outcomes"][0]) == {"provider", "latency_ms", "fallback"}
+
+
+def test_metrics_endpoint_exposes_prometheus_text(client):
+    client.get("/health")
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    assert "http_requests_total" in response.text

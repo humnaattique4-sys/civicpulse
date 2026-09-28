@@ -2,6 +2,7 @@ import logging
 import time
 from collections import deque
 
+from app.metrics import TRIAGE_FALLBACKS, TRIAGE_LATENCY
 from app.providers.triage.factory import get_provider
 from app.providers.triage.rules import RuleBasedTriage
 
@@ -36,8 +37,11 @@ def run_triage(text: str, location: str, provider=None):
         result = RuleBasedTriage().triage(text, location)
         triaged_by = "rules:fallback"
         fallback = True
+        TRIAGE_FALLBACKS.inc()
 
-    latency_ms = int((time.perf_counter() - start) * 1000)
+    elapsed = time.perf_counter() - start
+    TRIAGE_LATENCY.labels(triaged_by).observe(elapsed)
+    latency_ms = int(elapsed * 1000)
     _recent_outcomes.append(
         {"provider": triaged_by, "latency_ms": latency_ms, "fallback": fallback}
     )
