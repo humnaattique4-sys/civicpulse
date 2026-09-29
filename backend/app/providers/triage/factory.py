@@ -12,4 +12,8 @@ def get_provider():
     choice = os.getenv("TRIAGE_PROVIDER", "rules").lower()
     if choice == "simulated":
         return SimulatedTriage(fail_mode=os.getenv("TRIAGE_FAIL_MODE", "none"))
+    if choice in ("llm", "groq"):
+        from app.providers.triage.llm import LLMTriage  # lazy: needs openai SDK
+
+        return LLMTriage()
     return RuleBasedTriage()
