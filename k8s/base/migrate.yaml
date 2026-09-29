@@ -1,0 +1,20 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  namespace: civicpulse
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: ghcr.io/humnaattique4-sys/civicpulse-backend:TAG
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef: { name: civicpulse-config }
+            - secretRef: { name: civicpulse-secrets }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 250m, memory: 256Mi }
