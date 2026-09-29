@@ -112,7 +112,7 @@ function SubmitForm({ onSubmitted }) {
           <p><strong>Category:</strong> {result.category}</p>
           <p><strong>Priority:</strong> {result.priority}</p>
           <p><strong>Summary:</strong> {result.ai_summary}</p>
-          <p><strong>Triaged by:</strong> {result.triaged_by}</p>
+          <p><strong>Provider (triaged by):</strong> {result.triaged_by}</p>
         </div>
       )}
     </div>
@@ -155,6 +155,7 @@ function Dashboard({ refreshKey, bumpRefresh }) {
       load();
       bumpRefresh();
     } catch (err) {
+      // Show the server's message exactly as returned (e.g. the 409 detail).
       setStatusError(err.response?.data?.detail || "Could not update status");
     }
   };
@@ -163,11 +164,13 @@ function Dashboard({ refreshKey, bumpRefresh }) {
     <div>
       <h2>Dashboard</h2>
       {error && <p style={{ color: "red" }}>{error}</p>}
-      {statusError && <p style={{ color: "red" }}>{statusError}</p>}
+      {statusError && <p role="alert" style={{ color: "red" }}>{statusError}</p>}
 
       <div style={{ marginBottom: "1rem" }}>
-        <label>Category: </label>
+        <label htmlFor="filter-category">Category: </label>
         <select
+          id="filter-category"
+          aria-label="Category"
           value={category}
           onChange={(e) => {
             setCategory(e.target.value);
@@ -180,8 +183,10 @@ function Dashboard({ refreshKey, bumpRefresh }) {
           ))}
         </select>
 
-        <label style={{ marginLeft: "1rem" }}>Priority: </label>
+        <label htmlFor="filter-priority" style={{ marginLeft: "1rem" }}>Priority: </label>
         <select
+          id="filter-priority"
+          aria-label="Priority"
           value={priority}
           onChange={(e) => {
             setPriority(e.target.value);
@@ -194,8 +199,10 @@ function Dashboard({ refreshKey, bumpRefresh }) {
           ))}
         </select>
 
-        <label style={{ marginLeft: "1rem" }}>Status: </label>
+        <label htmlFor="filter-status" style={{ marginLeft: "1rem" }}>Status: </label>
         <select
+          id="filter-status"
+          aria-label="Status"
           value={statusFilter}
           onChange={(e) => {
             setStatusFilter(e.target.value);
@@ -230,12 +237,13 @@ function Dashboard({ refreshKey, bumpRefresh }) {
               <td>{c.ai_summary}</td>
               <td>
                 <select
-                  value=""
+                  aria-label={`Change status for ${c.id}`}
+                  value={c.status}
                   onChange={(e) => {
                     if (e.target.value) changeStatus(c.id, e.target.value);
                   }}
                 >
-                  <option value="">-- set status --</option>
+                  <option value={c.status}>{c.status}</option>
                   {STATUSES.map((s) => (
                     <option key={s} value={s}>{s}</option>
                   ))}
