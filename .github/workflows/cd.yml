@@ -1,4 +1,3 @@
-@'
 name: CD
 
 on:
@@ -13,6 +12,7 @@ env:
 
 jobs:
   test:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       TRIAGE_PROVIDER: simulated
@@ -43,6 +43,7 @@ jobs:
 
   build-push:
     needs: test
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -92,4 +93,3 @@ jobs:
         with:
           image: ${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
           artifact-name: sbom-frontend.spdx.json
-'@ | Set-Content -Path .github\workflows\cd.yml -Encoding ascii
