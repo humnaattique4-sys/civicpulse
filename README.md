@@ -1,49 +1,93 @@
 # CivicPulse
 
-Municipal complaint intake, triage, and operations platform. A citizen submits a complaint, an AI (or rule-based fallback) triages it into a category and priority, and it's tracked through a status lifecycle on a live dashboard.
+An AI-triaged civic complaint system. Citizens submit a complaint, an AI layer
+classifies its category and priority (with a deterministic rules-based
+fallback if the AI provider fails), and staff work the queue from a
+dashboard.
 
-Built for CS4032 - Software Construction and Design, Assignment 1.
+## Stack
 
-## Quickstart
+- **Backend:** FastAPI, SQLAlchemy, Alembic, PostgreSQL, Redis
+- **Frontend:** React + Vite, served by nginx (also proxies `/api` to the backend)
+- **AI layer:** pluggable `TriageProvider` interface - rule-based and
+  simulated providers included, with automatic fallback and a `rules:fallback`
+  audit trail
+- **Ops:** Docker Compose (segmented networks, healthchecks, named volumes),
+  GitHub Actions CI, Prometheus metrics at `/metrics`
 
-Clone the repo, then from the project root:
+## Running it locally
+
+Requires Docker Desktop.
 
 ```bash
+git clone https://github.com/humnaattique4-sys/civicpulse.git
+cd civicpulse
+cp .env.example .env
 docker compose up --build
 ```
 
-Wait for `Application startup complete` in the logs. Then seed the database with 30+ realistic complaints:
+Wait for all services to report healthy (`docker compose ps`), then:
+
+```bash
+docker compose exec backend python -m app.seed   # optional: 20 sample complaints
+```
+
+Open the app at **http://localhost:8080**.
+
+## Useful endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /health` | Liveness - no dependencies checked |
+| `GET /ready` | Readiness - checks Postgres and Redis, returns 503 and names the failed dependency if either is down |
+| `GET /metrics` | Prometheus-format metrics |
+| `GET /api/meta/providers` | Active triage provider and last 20 triage outcomes |
+| `POST /api/complaints` | Submit a complaint (rate-limited, 10/min per IP by default) |
+| `GET /api/complaints` | List complaints, filterable by `category`, `priority`, `status` |
+| `GET /api/stats` | Aggregate stats, cached in Redis (see `X-Cache` response header) |
+
+## Running the backend tests
 
 ```bash
 cd backend
 python -m venv venv
-.\venv\Scripts\Activate.ps1   # or source venv/bin/activate on Mac/Linux
-pip install -r requirements.txt
-cd ..
-python scripts/seed.py
+.\venv\Scripts\Activate.ps1        # Windows
+pip install -r requirements-dev.txt
+python -m pytest --cov=app
 ```
 
-## API
+28 tests, 97%+ coverage, 65% coverage floor enforced in CI.
 
-| Method | Path | Behaviour |
-|---|---|---|
-| POST | `/api/complaints` | Validate → triage → persist. Returns 201. |
-| GET | `/api/complaints/{id}` | 200 / 404 |
-| GET | `/api/complaints` | Filter by category, priority, status; paginated |
-| PATCH | `/api/complaints/{id}/status` | Enforces status state machine. Invalid transition → 409 |
-| GET | `/api/stats` | Aggregate counts, Redis-cached (30s TTL), `X-Cache` header |
-| GET | `/health` | Liveness — never touches the database |
-| GET | `/ready` | Readiness — checks Postgres and Redis |
+## Project layout
 
-Full interactive API docs: `http://localhost:8000/docs`
+    backend/   FastAPI app (routes to services to providers, four-layer separation)
+    frontend/  React + Vite app
+    docs/      ADRs and runbook
+    .github/   CI workflow
+    compose.yaml, .env.example
 
-## Architecture
+## Architecture notes
 
-- **Backend**: FastAPI + SQLAlchemy, four-layer structure (routes → services → repositories → providers)
-- **Database**: PostgreSQL 16, tables created on startup (Alembic migrations planned)
-- **Cache**: Redis 7 — read-through cache for `/api/stats` and (planned) rate limiting
-- **AI Triage**: Rule-based keyword classifier (`RuleBasedTriage`), designed behind a `TriageProvider` interface so an LLM-backed provider can be swapped in without changing the API contract
+- **Fallback triage:** if the active provider raises or returns a schema-invalid
+  result, the service logs one WARNING and falls back to the rule-based
+  provider, recording `triaged_by = "rules:fallback"`. This never surfaces as
+  a 500 to the client.
+- **Network isolation:** the `backend` service is on both the `edge` and
+  `internal` Docker networks; `postgres` and `redis` are on `internal` only
+  (`internal: true`, no route to the outside). The `frontend` is on `edge`
+  only and cannot reach Postgres or Redis directly.
+- **Migrations:** `alembic/env.py` reads `DATABASE_URL` from the environment,
+  so the same migration command works locally and inside the `migrate`
+  one-shot container.
 
-## Status
+## Known limitations
 
-Backend, AI triage, caching, and CI are implemented and tested. Frontend and Kubernetes deployment are in progress.
+- Only rule-based and simulated triage providers are implemented; a real
+  LLM-backed provider (Groq/Gemini) is not yet wired in.
+- No Kubernetes manifests yet - deployment is Docker Compose only.
+- Triage result caching (content-hash keyed) is not yet implemented.
+
+## Team
+
+- Humna Attique ([@humnaattique4-sys](https://github.com/humnaattique4-sys)) - backend, AI layer, Docker/Compose, CI
+- Amna ([@Anfey-SE](https://github.com/Anfey-SE)) - frontend, documentation
