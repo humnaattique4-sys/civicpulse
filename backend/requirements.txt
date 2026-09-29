@@ -7,3 +7,4 @@ alembic
 python-dotenv
 redis
 prometheus-client
+openai>=1.40
