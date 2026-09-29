@@ -77,9 +77,11 @@ def update_status(complaint_id: UUID, payload: StatusUpdate, db: Session = Depen
         raise HTTPException(status_code=404, detail="Complaint not found")
 
     if not validate_transition(complaint.status, payload.status):
+        cur = getattr(complaint.status, "value", complaint.status)
+        new = getattr(payload.status, "value", payload.status)
         raise HTTPException(
             status_code=409,
-            detail=f"Invalid transition from {complaint.status} to {payload.status}",
+            detail=f"Invalid transition from {cur} to {new}",
         )
 
     complaint.status = payload.status
