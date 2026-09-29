@@ -65,3 +65,5 @@ why the fallback logs a WARNING instead of raising, why the networks are
 split the way they are, and where the gaps are (Kubernetes, real LLM
 provider, triage caching), because I was the one running and debugging
 the code at every step.
+
+- Frontend tests (409 message, filters, pagination, X-Cache badge, error boundary) and small accessibility labels on the Dashboard selects. I read, ran and tested this code before committing it.
