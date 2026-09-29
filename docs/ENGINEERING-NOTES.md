@@ -1,37 +1,127 @@
 # Engineering Notes
 
-## 1. Three things that differ between laptop and CI runner, and the exact line that freezes each
+## 1. Three things that differ between my laptop and a CI runner, and what freezes each
 
-1. **Python version.** My laptop has Python 3.14 installed locally, but the actual runtime is pinned in `backend/Dockerfile`: `FROM python:3.12-slim`. This line guarantees the code always runs on 3.12 regardless of what's on the developer's machine — this distinction mattered directly, since a local `pip install` on 3.14 failed to build `pydantic-core` from source (no pre-built wheel existed yet for that Python version), while the Docker build on 3.12 succeeded immediately using a pre-built wheel.
-2. **Database availability.** My laptop has a long-lived Postgres container with existing data; the CI runner has none. This is frozen by `.github/workflows/ci.yml`'s `test-backend` job, which does not start a database at all — this is exactly what surfaced the bug where `app/main.py` originally tried to create tables at *import time*, which failed with no database present. Fixed by moving that logic into a FastAPI `lifespan` startup hook instead.
-3. **Installed system tools.** My laptop has whatever Rust/build tools happen to be present (or absent) from unrelated installs; the CI runner has a clean, minimal Ubuntu image. This is frozen by the `requirements.txt` file itself combined with `actions/setup-python@v5` pinning the exact Python version — dependencies are resolved fresh, from pinned or loosely-pinned versions in that file, with no reliance on anything already present on a machine.
+- **OS and Python version.** My laptop runs Windows with Python 3.14. CI and
+  the container both use `python:3.12-slim`, pinned in `backend/Dockerfile`
+  line 1: `FROM python:3.12-slim AS builder`. This is also pinned by digest
+  via the base image's resolved SHA that Docker records at build time, so a
+  Debian security update to `slim` doesn't silently change my build.
+- **Installed packages.** Locally I had `prometheus-client` in my venv but
+  not in `backend/requirements.txt`, so the app ran fine on my machine and
+  crashed on start in the container (`ModuleNotFoundError: No module named
+  'prometheus_client'`). `backend/requirements-dev.txt` line 1
+  (`-r requirements.txt`) plus `requirements.txt` itself is what freezes the
+  dependency set for CI and Docker; a package only in my local venv is
+  invisible to both.
+- **Database and cache.** My laptop can fall back to whatever Postgres/Redis
+  happen to be running locally (or none, if I haven't started them). CI and
+  Docker Compose both start fresh, disposable services:
+  `compose.yaml` pins `postgres:16-alpine` and `redis:7-alpine` by tag, and
+  `tests/conftest.py` uses an in-memory SQLite engine
+  (`create_engine("sqlite://", ...)`) plus a `FakeRedis` stand-in, so tests
+  never depend on whatever state is on my machine.
 
 ## 2. Where the pipeline sits on the CI/CD maturity ladder
 
-The current pipeline (`ci.yml`) runs on every push to `dev`, installs dependencies, and verifies the app imports and runs successfully — this is closer to the "Basic CI" rung: automated build/verify on every push, but not yet full test coverage, not yet automated deployment. There is no `cd.yml` implemented yet, so nothing is automatically built, pushed to a registry, or deployed — that would be the next rung up ("Continuous Delivery"), and it buys the team the ability to know, at any moment, that the latest `dev` commit is not just import-clean but actually deployable, with a human only needed to approve the promotion to `main`.
+Our pipeline (`.github/workflows/ci.yml`) runs on every PR into `main` and
+every push to `dev`: it installs dependencies, runs the 28-test backend
+suite with a 65% coverage gate (`--cov-fail-under=65`), and runs the
+frontend's Vitest suite. That's automated build + automated test on every
+change, which is continuous integration proper — not just "we have a CI
+badge."
+
+We are not at continuous deployment: there's no `cd.yml`, nothing builds or
+pushes a versioned image automatically, and nothing deploys on merge. We're
+sitting at what the lecture calls the "automated testing" rung, one below
+"automated deployment to staging."
+
+The next rung up would add a `cd.yml` gated by `needs: [test-backend,
+test-frontend]`, which builds and tags the Docker images by commit SHA and
+pushes them to a registry on merge to `main`. That buys us a guarantee that
+whatever passed CI is exactly what gets deployed, with no manual rebuild
+step in between where something could drift.
 
 ## 3. The exact line guaranteeing build-once-deploy-many, and what breaks without it
 
-The backend's `Dockerfile` reads configuration only from environment variables at container start (see `app/database.py`: `DATABASE_URL = os.getenv("DATABASE_URL", ...)` and `app/cache.py`: `REDIS_URL = os.getenv("REDIS_URL", ...)`) rather than baking any environment-specific value into the image at build time. Without this, the same built image could not be pointed at a different database or Redis instance without rebuilding it — defeating the entire purpose of building an image once and deploying it across dev/staging/production.
+We don't have this yet. Our images are tagged `:latest` by default from
+`docker compose build` (no explicit tag in `compose.yaml`), which is the
+opposite of build-once-deploy-many: `:latest` means "whatever was built
+most recently," so two people running `docker compose up --build` on
+different commits get different images under the same name, and a
+redeploy can silently pick up unintended code.
 
-The frontend does **not** yet fully satisfy this guarantee — as documented in ADR 0002, the current frontend calls a hardcoded `http://localhost:8000` in `src/api.js`, which means the built frontend image is only valid for local development. This is a known, documented gap rather than an oversight.
+The fix, not yet implemented: build the image once per commit, tag it with
+the commit SHA (e.g. `civicpulse-backend:${GITHUB_SHA}`), push it, and
+have every environment reference that exact tag rather than `:latest`.
+Without it, "it worked in staging" doesn't guarantee "it's the same
+artifact in production" — that's the −8 deduction category for deploying
+`:latest` anywhere.
 
-## 4. With a live LLM provider, the service is probabilistic — how was CI kept deterministic?
+## 4. Probabilistic correctness with a live LLM provider
 
-The current implementation only ships `RuleBasedTriage` (see `app/services/triage_service.py`), which is fully deterministic keyword matching with no external network calls at all — "correct" for this component currently means: given the same input text, the same category/priority/summary are returned every time, and this is exactly what makes it safe to run in CI with zero flakiness. If an LLM-backed provider were added later, "correct" would need to shift from exact-output matching to schema-conformance and safety checks (does the response validate against the Pydantic schema? does it fall back correctly on timeout/error?), with CI pinned to a deterministic fake provider (`SimulatedTriage`, not yet implemented) rather than testing against the real probabilistic model directly.
+**Not yet implemented.** We have not wired in a real LLM-backed
+`TriageProvider` (only `RuleBasedTriage` and `SimulatedTriage` in
+`backend/app/providers/triage/`). Once added, "correct" for that component
+can't mean "identical output every run" the way `test_rules_burst_water_
+main_is_water_and_high` in `tests/test_triage.py` does for the rule-based
+provider. It would instead mean the response validates against the
+`TriageResult` schema (`backend/app/providers/triage/base.py`) and the
+category is plausible for the input, checked with a permissive assertion
+(e.g. category is not `other` for an obviously water-related complaint)
+rather than an exact match.
+
+To keep CI deterministic, `app/providers/triage/factory.py` reads the
+provider choice from the `TRIAGE_PROVIDER` environment variable at call
+time, and `.github/workflows/ci.yml` pins `TRIAGE_PROVIDER: simulated`.
+CI never calls a real network provider, so it never depends on model
+non-determinism, rate limits, or an API key.
 
 ## 5. HPA lag
 
-Not applicable — Kubernetes deployment, HPA, and the associated load testing were not implemented in this submission due to time constraints, prioritized against the assignment's own stated guidance that AI layer, backend, and CI/CD matter more than Kubernetes when time is short (§5.1).
+**Not yet implemented.** We have no Kubernetes manifests and no HPA
+configured, so there's no lag to measure. This is planned as follow-up
+work; the compose-only setup documented in the README is what currently
+exists.
 
-## 6. Why VPA would run in Off mode
+## 6. Why VPA is in Off mode
 
-Not implemented for the same reason as above. Conceptually: VPA in Auto mode adjusting CPU requests while HPA scales on CPU utilization creates a feedback loop — VPA raising a pod's request lowers computed utilization (usage ÷ request), which causes HPA to scale in, raising per-pod load, which causes VPA to raise the request again. Recommender-only mode avoids this by requiring a human to review and apply changes rather than the two controllers reacting to each other automatically.
+**Not yet implemented.** No VPA is configured, for the same reason as (5).
 
-## 7. Where does the internal-only network leave a service calling a hosted LLM?
+## 7. The `internal: true` network and a hosted LLM call
 
-This was directly relevant even without Kubernetes: in `docker-compose.yaml`, `postgres` and `redis` are only reachable from `backend` on the same Docker network as `backend` itself (the current single-network setup does not yet implement the two-network split the assignment describes in §3.2). If a hosted LLM provider were added, the service making that outbound call would need to remain on a network with a route to the internet — meaning the strict internal-only isolation described in the assignment (where database/cache containers have zero internet route) is compatible with an LLM-calling service only if that specific service sits on a network bridge that both reaches the internal services *and* has outbound internet access, which is exactly the role `backend` already plays in the current setup.
+Our `compose.yaml` defines two networks: `edge` (default bridge) and
+`internal` (`driver: bridge`, `internal: true`, meaning Docker gives it no
+route out to the host or internet). `postgres` and `redis` are attached to
+`internal` only. If `backend` were also `internal`-only, it could reach the
+database but could never make an outbound HTTPS call to a hosted LLM API.
 
-## 8. The failure that cost more than an hour
+We resolved this by putting `backend` on **both** networks:
+`networks: [edge, internal]` in the `backend` service. `edge` gives it a
+route out to the internet (for the LLM call, once added), and `internal`
+gives it a route to Postgres and Redis. `frontend` is `edge`-only, so it
+can reach `backend` but has no route to `postgres` or `redis` at all —
+verified with `docker compose exec frontend sh -c "nc -zv -w 2 postgres
+5432"`, which fails to resolve the hostname, versus the same check from
+`backend`, which succeeds.
 
-Getting WSL2 and Docker Desktop working on Windows took over an hour by itself: `wsl --install` repeatedly stalled at 0% downloading Ubuntu, which I first believed was just a slow connection. The command that revealed the actual cause was `wsl --status`, which showed the WSL2 platform was present but the kernel file itself was missing ("The WSL 2 kernel file is not found") — the automated `wsl --update` command hung the same way, which told me the issue was a network path being blocked specifically for Microsoft Store/CDN downloads, not a general connectivity problem. The fix was downloading the kernel package directly via a browser from `aka.ms/wsl2kernel` and installing it manually, sidestepping whatever was blocking the automated path entirely.
+## 8. The failure
+
+The backend container crashed on startup with `ModuleNotFoundError: No
+module named 'prometheus_client'`, even though the exact same code ran
+fine with `python -m pytest` and `uvicorn app.main:app --reload` on my own
+machine. I first assumed it was a Docker networking or healthcheck timing
+issue, since the failure only showed up as `backend-1 is unhealthy` in
+`docker compose ps` and I'd just changed the compose healthchecks. I spent
+time rewriting the Dockerfile's `USER` and `HEALTHCHECK` lines before
+looking at the actual container log.
+
+`docker compose logs backend --tail 40` was the command that told me the
+truth: it printed the full Python traceback ending in
+`ModuleNotFoundError: No module named 'prometheus_client'`. I had installed
+`prometheus-client` into my local venv with `pip install prometheus-client`
+while building `app/metrics.py`, but never added it to
+`backend/requirements.txt` — so my venv had it, but the Docker image, built
+strictly from `requirements.txt`, did not. The fix was one line added to
+`requirements.txt`, followed by `docker compose build --no-cache backend
+migrate`.
